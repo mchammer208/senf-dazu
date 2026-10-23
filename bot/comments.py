@@ -163,6 +163,8 @@ def neue_kommentare():
             try:
                 e = claude.ask_json(SYSTEM_ANTWORT, (
                     f"Post: {hook}\n\nKommentar von @{c.get('username')}: {c.get('text')}"), max_tokens=900)
+            except claude.ApiFehler:
+                raise
             except (ValueError, RuntimeError) as fehler:
                 print(f"Entwurf für {c['id']} übersprungen: {fehler}")
                 continue

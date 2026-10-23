@@ -96,15 +96,17 @@ def erzeugen(topf, alte_hooks, versuche=5):
                 continue
             urteil = claude.ask_json(SYSTEM_PRUEFER, (
                 f"Neuer Post:\n{post}\n\nBereits gepostete Meinungen:\n{liste}"), max_tokens=800)
+        except claude.ApiFehler:
+            raise                        # falscher Key oder falsches Modell – sofort melden
         except (ValueError, RuntimeError) as e:
-            # Unsauberes JSON oder ein Aussetzer der API kostet nur diesen Versuch,
-            # nicht den ganzen Lauf.
+            # Unsauberes JSON oder ein Aussetzer kostet nur diesen Versuch, nicht den Lauf.
             gruende.append(f"Antwort unbrauchbar: {str(e)[:120]}")
             continue
         if urteil.get("ok") is True:
             return post
         gruende.append(urteil.get("grund", "abgelehnt"))
-    raise RuntimeError("Kein sicherer Post zustande gekommen: " + " | ".join(gruende))
+    einmalig = list(dict.fromkeys(gruende))
+    raise RuntimeError("Kein sicherer Post zustande gekommen: " + " | ".join(einmalig))
 
 
 def caption_bauen(post):

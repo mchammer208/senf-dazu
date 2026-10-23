@@ -8,11 +8,12 @@ import requests
 from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 
 
-def ask(system, user, max_tokens=2000, vorgabe=None):
-    """vorgabe: erzwingt den Beginn der Antwort (für JSON: '{')."""
+class ApiFehler(RuntimeError):
+    """Dauerhafter Fehler der Claude-API – Wiederholen bringt nichts."""
+
+
+def ask(system, user, max_tokens=2000):
     nachrichten = [{"role": "user", "content": user}]
-    if vorgabe:
-        nachrichten.append({"role": "assistant", "content": vorgabe})
 
     for versuch in range(4):
         r = requests.post(
@@ -34,12 +35,12 @@ def ask(system, user, max_tokens=2000, vorgabe=None):
             time.sleep(15 * (versuch + 1))
             continue
         if r.status_code >= 400:
-            raise RuntimeError(f"Claude-API {r.status_code}: {r.text[:300]}")
+            raise ApiFehler(f"Claude-API {r.status_code}: {r.text[:300]}")
         daten = r.json()
         text = "".join(b.get("text", "") for b in daten["content"] if b.get("type") == "text")
         if daten.get("stop_reason") == "max_tokens":
             raise ValueError("Antwort wurde abgeschnitten (max_tokens zu klein)")
-        return (vorgabe or "") + text
+        return text
     raise RuntimeError("Claude-API dauerhaft überlastet")
 
 
@@ -74,10 +75,10 @@ def ask_json(system, user, versuche=3, **kw):
     frage = user
     for nr in range(versuche):
         try:
-            # Die Vorgabe '{' zwingt das Modell direkt in die JSON-Struktur.
-            text = ask(system, frage, vorgabe="{", **kw)
-        except ValueError as e:          # abgeschnitten -> ohne Vorgabe neu versuchen
+            text = ask(system, frage, **kw)
+        except ValueError as e:          # abgeschnitten -> mit mehr Luft neu versuchen
             letzter_fehler = str(e)
+            kw["max_tokens"] = int(kw.get("max_tokens", 2000) * 1.5)
             time.sleep(2)
             continue
 
