@@ -1,0 +1,30 @@
+name: Entwurf freigeben
+
+on:
+  workflow_dispatch:
+    inputs:
+      nur_anzeigen:
+        description: "Nur anzeigen, was wartet (nichts posten)"
+        type: boolean
+        default: false
+
+jobs:
+  freigeben:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python bot/freigeben.py ${{ inputs.nur_anzeigen && '--liste' || '' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
