@@ -116,7 +116,7 @@ def caption_bauen(post):
         t = "#" + re.sub(r"[^\wäöüÄÖÜß]", "", t.lstrip("#"))
         if len(t) > 1 and t.lower() not in [x.lower() for x in tags]:
             tags.append(t)
-    return f"{post['caption'].strip()}\n\n{' '.join(tags)}\n\nKI-generiert."
+    return f"{post['caption'].strip()}\n\n{' '.join(tags)}"
 
 
 def entwurf_anlegen(nummer, topf, post, caption, urls, dateien, titel):

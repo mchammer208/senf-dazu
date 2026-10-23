@@ -32,11 +32,19 @@ def senden(row, text):
 def post_freigabe(aktion, entwurf_id, msg, cb_id):
     """Verarbeitet die Knöpfe unter einem Post-Entwurf: posten, verwerfen, neu erzeugen."""
     rows = store.select("post_drafts", f"id=eq.{entwurf_id}")
-    if not rows or rows[0]["status"] != "pending":
+    if not rows:
+        print(f"Kein Post-Entwurf mit id {entwurf_id}")
+        telegram.answer_callback(cb_id, "Entwurf nicht gefunden")
+        telegram.send(f"⚠️ Zu diesem Entwurf (id {entwurf_id}) finde ich nichts mehr. "
+                      f"Nutze <b>Actions → Entwurf freigeben</b>.")
+        return
+    if rows[0]["status"] != "pending":
+        print(f"Entwurf {entwurf_id} ist bereits '{rows[0]['status']}'")
         telegram.answer_callback(cb_id, "Schon erledigt")
         return
     entwurf = rows[0]
     alt = telegram.esc(msg.get("text", ""))
+    print(f"Bearbeite Entwurf {entwurf['id']} (#{entwurf['nummer']}) mit Aktion {aktion}")
 
     if aktion == "pok":
         try:
@@ -114,7 +122,7 @@ def post_bearbeiten(entwurf, text):
         except Exception as e:
             return f"❌ Neu rendern fehlgeschlagen: {telegram.esc(str(e))[:200]}"
 
-    neue_caption = text.strip() + "\n\nKI-generiert."
+    neue_caption = text.strip()
     store.update("post_drafts", {"id": entwurf["id"]}, {"caption": neue_caption})
     if entwurf.get("telegram_message_id"):
         telegram.edit(entwurf["telegram_message_id"],
@@ -132,8 +140,10 @@ def freigaben_abarbeiten():
             cq = u["callback_query"]
             msg = cq.get("message", {})
             if str(msg.get("chat", {}).get("id")) != TG_CHAT:
+                print(f"Klick aus fremdem Chat ignoriert: {msg.get('chat', {}).get('id')}")
                 continue
             aktion, _, did = cq.get("data", "").partition(":")
+            print(f"Klick empfangen: {aktion}:{did}")
 
             if aktion.startswith("p"):          # Post-Entwurf statt Kommentar
                 post_freigabe(aktion, did, msg, cq["id"])
@@ -141,6 +151,7 @@ def freigaben_abarbeiten():
 
             rows = store.select("comment_drafts", f"id=eq.{did}")
             if not rows or rows[0]["status"] != "pending":
+                print(f"Kein wartender Kommentar-Entwurf mit id {did}")
                 telegram.answer_callback(cq["id"], "Schon erledigt")
                 continue
             row = rows[0]
@@ -226,8 +237,12 @@ def main():
     if not telegram.aktiv():
         print("Telegram nicht eingerichtet – Kommentar-Begleitung pausiert.")
         return
+    offen = store.select("post_drafts", "status=eq.pending&select=id,nummer,hook")
+    print(f"Wartende Post-Entwürfe: {[(e['id'], e['nummer']) for e in offen]}")
     freigaben_abarbeiten()
     neue_kommentare()
+    danach = store.select("post_drafts", "status=eq.pending&select=id")
+    print(f"Wartende Post-Entwürfe danach: {len(danach)}")
 
 
 if __name__ == "__main__":
