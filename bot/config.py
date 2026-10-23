@@ -24,6 +24,11 @@ BUCKET = "slides"
 HANDLE = env("ACCOUNT_HANDLE", "@gib.senf.dazu")  # nur Fallback – im Betrieb kommt der Name live von Instagram
 MAX_DRAFTS_PER_RUN = 15   # Kommentar-Entwürfe pro Stunde, damit Telegram nicht überläuft
 
+# Freigabe-Modus: "1" = Posts kommen erst als Entwurf nach Telegram und warten auf dich,
+# "0" = der Bot postet selbstständig. Umschaltbar in GitHub unter
+# Settings -> Secrets and variables -> Actions -> Variables -> POST_FREIGABE
+POST_FREIGABE = env("POST_FREIGABE", "1") != "0"
+
 # Themen-Töpfe – der Bot nimmt immer den, der am längsten nicht dran war
 TOEPFE = [
     "Essen und Kochen",

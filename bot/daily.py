@@ -17,7 +17,7 @@ import claude
 import insta
 import store
 import telegram
-from config import BERLIN, POST_HOUR, TABU, TOEPFE
+from config import BERLIN, POST_FREIGABE, POST_HOUR, TABU, TOEPFE
 from render import render
 
 SYSTEM_AUTOR = f"""Du bist die Redaktion eines deutschen Instagram-Account für unpopuläre Meinungen.
@@ -58,9 +58,12 @@ def jetzt():
 
 
 def heute_schon_gepostet():
-    start = jetzt().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-    rows = store.select("posts", f"created_at=gte.{start.strftime('%Y-%m-%dT%H:%M:%SZ')}&select=id")
-    return bool(rows)
+    """Zählt veröffentlichte Posts und wartende Entwürfe – beides heißt: heute ist erledigt."""
+    start = (jetzt().replace(hour=0, minute=0, second=0, microsecond=0)
+             .astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    if store.select("posts", f"created_at=gte.{start}&select=id"):
+        return True
+    return bool(store.select("post_drafts", f"created_at=gte.{start}&status=eq.pending&select=id"))
 
 
 def topf_waehlen(historie):
@@ -79,19 +82,25 @@ def laengen_ok(p):
         return False
 
 
-def erzeugen(topf, alte_hooks, versuche=4):
+def erzeugen(topf, alte_hooks, versuche=5):
     liste = "\n".join(f"- {h}" for h in alte_hooks[:120]) or "- (noch keine)"
     gruende = []
     for _ in range(versuche):
-        post = claude.ask_json(SYSTEM_AUTOR, (
-            f"Themenbereich heute: {topf}.\n\n"
-            f"Diese Meinungen gab es schon – nicht wiederholen, auch nicht sinngemäß:\n{liste}\n\n"
-            "Liefere eine neue."))
-        if not laengen_ok(post):
-            gruende.append("Format/Längen daneben")
+        try:
+            post = claude.ask_json(SYSTEM_AUTOR, (
+                f"Themenbereich heute: {topf}.\n\n"
+                f"Diese Meinungen gab es schon – nicht wiederholen, auch nicht sinngemäß:\n{liste}\n\n"
+                "Liefere eine neue."))
+            if not laengen_ok(post):
+                gruende.append("Format/Längen daneben")
+                continue
+            urteil = claude.ask_json(SYSTEM_PRUEFER, (
+                f"Neuer Post:\n{post}\n\nBereits gepostete Meinungen:\n{liste}"), max_tokens=800)
+        except (ValueError, RuntimeError) as e:
+            # Unsauberes JSON oder ein Aussetzer der API kostet nur diesen Versuch,
+            # nicht den ganzen Lauf.
+            gruende.append(f"Antwort unbrauchbar: {str(e)[:120]}")
             continue
-        urteil = claude.ask_json(SYSTEM_PRUEFER, (
-            f"Neuer Post:\n{post}\n\nBereits gepostete Meinungen:\n{liste}"), max_tokens=300)
         if urteil.get("ok") is True:
             return post
         gruende.append(urteil.get("grund", "abgelehnt"))
@@ -143,11 +152,25 @@ def main():
     stempel = jetzt().strftime("%Y%m%d-%H%M")
     urls = [store.upload(f, f"{nummer:04d}-{stempel}/{i + 1:02d}.jpg") for i, f in enumerate(dateien)]
     caption = caption_bauen(post)
-    media_id = insta.publish_carousel(urls, caption)
 
+    if POST_FREIGABE:
+        entwurf = store.insert("post_drafts", {
+            "nummer": nummer, "topf": topf, "hook": post["hook"],
+            "caption": caption, "bild_urls": "\n".join(urls)})
+        telegram.send_album(dateien, f"📝 <b>Entwurf für Post #{nummer}</b> · {telegram.esc(topf)}")
+        mid = telegram.send(
+            f"„{telegram.esc(post['hook'])}“\n\n<b>Bildunterschrift:</b>\n{telegram.esc(caption)}",
+            buttons=[("✅ Posten", f"pok:{entwurf['id']}"),
+                     ("🔄 Neuer Vorschlag", f"pneu:{entwurf['id']}"),
+                     ("🗑 Verwerfen", f"pno:{entwurf['id']}")])
+        store.update("post_drafts", {"id": entwurf["id"]}, {"telegram_message_id": mid})
+        print("Entwurf wartet auf deine Freigabe.")
+        return
+
+    media_id = insta.publish_carousel(urls, caption)
     store.insert("posts", {"nummer": nummer, "topf": topf, "hook": post["hook"],
                            "caption": caption, "ig_media_id": media_id})
-    telegram.send(f"✅ <b>Post #{nummer}</b> ist online\n„{telegram.esc(post['hook'])}“")
+    telegram.send_album(dateien, f"✅ <b>Post #{nummer}</b> ist online\n„{telegram.esc(post['hook'])}“")
     print("Veröffentlicht:", media_id)
 
 

@@ -1,5 +1,6 @@
 """Telegram-Bot: Meldungen an dich und deine Freigaben zurück."""
 import html
+import json
 
 import requests
 
@@ -36,6 +37,28 @@ def send_photo(path, caption=""):
     with open(path, "rb") as f:
         requests.post(f"{API}/sendPhoto", data={"chat_id": TG_CHAT, "caption": caption},
                       files={"photo": f}, timeout=60).raise_for_status()
+
+
+def send_album(pfade, caption=""):
+    """Schickt bis zu 10 Bilder als ein Album – so kommt das Karussell am Stück an."""
+    if not aktiv():
+        print("[Telegram aus] Album:", pfade)
+        return
+    dateien, medien = {}, []
+    for i, p in enumerate(pfade[:10]):
+        name = f"bild{i}"
+        dateien[name] = open(p, "rb")
+        eintrag = {"type": "photo", "media": f"attach://{name}"}
+        if i == 0 and caption:
+            eintrag.update(caption=caption, parse_mode="HTML")
+        medien.append(eintrag)
+    try:
+        r = requests.post(f"{API}/sendMediaGroup", timeout=120,
+                          data={"chat_id": TG_CHAT, "media": json.dumps(medien)}, files=dateien)
+        r.raise_for_status()
+    finally:
+        for f in dateien.values():
+            f.close()
 
 
 def edit(message_id, text):

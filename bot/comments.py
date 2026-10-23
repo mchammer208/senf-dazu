@@ -28,6 +28,74 @@ def senden(row, text):
     return "✅ Gesendet"
 
 
+def post_freigabe(aktion, entwurf_id, msg, cb_id):
+    """Verarbeitet die Knöpfe unter einem Post-Entwurf: posten, verwerfen, neu erzeugen."""
+    rows = store.select("post_drafts", f"id=eq.{entwurf_id}")
+    if not rows or rows[0]["status"] != "pending":
+        telegram.answer_callback(cb_id, "Schon erledigt")
+        return
+    entwurf = rows[0]
+    alt = telegram.esc(msg.get("text", ""))
+
+    if aktion == "pok":
+        try:
+            urls = [u for u in entwurf["bild_urls"].split("\n") if u.strip()]
+            media_id = insta.publish_carousel(urls, entwurf["caption"])
+        except Exception as e:
+            telegram.answer_callback(cb_id, "Fehlgeschlagen")
+            telegram.edit(msg["message_id"], f"{alt}\n\n❌ Posten fehlgeschlagen: {telegram.esc(str(e))[:200]}")
+            return
+        store.insert("posts", {"nummer": entwurf["nummer"], "topf": entwurf["topf"],
+                               "hook": entwurf["hook"], "caption": entwurf["caption"],
+                               "ig_media_id": media_id})
+        store.update("post_drafts", {"id": entwurf["id"]}, {"status": "published"})
+        telegram.edit(msg["message_id"], f"{alt}\n\n✅ Ist online")
+
+    elif aktion == "pno":
+        store.update("post_drafts", {"id": entwurf["id"]}, {"status": "rejected"})
+        telegram.edit(msg["message_id"], f"{alt}\n\n🗑 Verworfen – heute kommt nichts mehr")
+
+    elif aktion == "pneu":
+        store.update("post_drafts", {"id": entwurf["id"]}, {"status": "rejected"})
+        telegram.edit(msg["message_id"], f"{alt}\n\n🔄 Verworfen, neuer Vorschlag folgt")
+        telegram.answer_callback(cb_id, "Einen Moment …")
+        neuer_vorschlag(entwurf)
+        return
+
+    telegram.answer_callback(cb_id)
+
+
+def neuer_vorschlag(alter_entwurf):
+    """Erzeugt sofort einen neuen Entwurf mit derselben Nummer."""
+    import tempfile
+
+    import daily
+    from render import render
+    try:
+        historie = store.select("posts", "select=nummer,hook,topf&order=id.desc&limit=120")
+        alte = [h["hook"] for h in historie] + [alter_entwurf["hook"]]
+        post = daily.erzeugen(alter_entwurf["topf"], alte)
+        post["nummer"] = alter_entwurf["nummer"]
+        post["handle"] = "@" + insta.me()["username"]
+        dateien = render(post, tempfile.mkdtemp())
+        stempel = daily.jetzt().strftime("%Y%m%d-%H%M%S")
+        urls = [store.upload(f, f"{post['nummer']:04d}-{stempel}/{i + 1:02d}.jpg")
+                for i, f in enumerate(dateien)]
+        caption = daily.caption_bauen(post)
+        neu = store.insert("post_drafts", {
+            "nummer": post["nummer"], "topf": alter_entwurf["topf"], "hook": post["hook"],
+            "caption": caption, "bild_urls": "\n".join(urls)})
+        telegram.send_album(dateien, f"📝 <b>Neuer Entwurf für Post #{post['nummer']}</b>")
+        mid = telegram.send(
+            f"„{telegram.esc(post['hook'])}“\n\n<b>Bildunterschrift:</b>\n{telegram.esc(caption)}",
+            buttons=[("✅ Posten", f"pok:{neu['id']}"),
+                     ("🔄 Neuer Vorschlag", f"pneu:{neu['id']}"),
+                     ("🗑 Verwerfen", f"pno:{neu['id']}")])
+        store.update("post_drafts", {"id": neu["id"]}, {"telegram_message_id": mid})
+    except Exception as e:
+        telegram.send(f"🚨 <b>Neuer Vorschlag fehlgeschlagen</b>\n{telegram.esc(str(e))[:600]}")
+
+
 def freigaben_abarbeiten():
     offset = int((store.get_setting("tg_offset") or {}).get("value") or 0)
     for u in telegram.updates(offset):
@@ -39,6 +107,11 @@ def freigaben_abarbeiten():
             if str(msg.get("chat", {}).get("id")) != TG_CHAT:
                 continue
             aktion, _, did = cq.get("data", "").partition(":")
+
+            if aktion.startswith("p"):          # Post-Entwurf statt Kommentar
+                post_freigabe(aktion, did, msg, cq["id"])
+                continue
+
             rows = store.select("comment_drafts", f"id=eq.{did}")
             if not rows or rows[0]["status"] != "pending":
                 telegram.answer_callback(cq["id"], "Schon erledigt")
@@ -87,8 +160,12 @@ def neue_kommentare():
             if neu >= MAX_DRAFTS_PER_RUN:
                 return
             nummer, hook = hooks.get(m["id"], ("?", (m.get("caption") or "")[:90]))
-            e = claude.ask_json(SYSTEM_ANTWORT, (
-                f"Post: {hook}\n\nKommentar von @{c.get('username')}: {c.get('text')}"), max_tokens=400)
+            try:
+                e = claude.ask_json(SYSTEM_ANTWORT, (
+                    f"Post: {hook}\n\nKommentar von @{c.get('username')}: {c.get('text')}"), max_tokens=900)
+            except (ValueError, RuntimeError) as fehler:
+                print(f"Entwurf für {c['id']} übersprungen: {fehler}")
+                continue
             ignorieren = e.get("empfehlung") == "ignorieren" or not e.get("antwort")
             row = store.insert("comment_drafts", {
                 "comment_id": c["id"], "media_id": m["id"], "username": c.get("username"),
