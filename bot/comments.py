@@ -51,13 +51,17 @@ def post_freigabe(aktion, entwurf_id, msg, cb_id):
             urls = [u for u in entwurf["bild_urls"].split("\n") if u.strip()]
             media_id = insta.publish_carousel(urls, entwurf["caption"])
         except Exception as e:
+            print("Posten fehlgeschlagen:", repr(e))
             telegram.answer_callback(cb_id, "Fehlgeschlagen")
-            telegram.edit(msg["message_id"], f"{alt}\n\n❌ Posten fehlgeschlagen: {telegram.esc(str(e))[:200]}")
+            telegram.send(f"❌ <b>Post #{entwurf['nummer']} konnte nicht veröffentlicht werden</b>\n"
+                          f"{telegram.esc(str(e))[:600]}\n\n"
+                          f"Der Entwurf bleibt stehen, du kannst es erneut versuchen.")
             return
         store.insert("posts", {"nummer": entwurf["nummer"], "topf": entwurf["topf"],
                                "hook": entwurf["hook"], "caption": entwurf["caption"],
                                "ig_media_id": media_id})
         store.update("post_drafts", {"id": entwurf["id"]}, {"status": "published"})
+        print("Veröffentlicht:", media_id)
         telegram.edit(msg["message_id"], f"{alt}\n\n✅ Ist online")
 
     elif aktion == "pno":
