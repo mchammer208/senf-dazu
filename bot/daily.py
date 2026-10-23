@@ -137,8 +137,19 @@ def ersten_kommentar_posten(media_id, post_json):
         return None
     try:
         antwort = insta.kommentieren(media_id, text[:2200])
+        kommentar_id = antwort.get("id")
         print(f"Erster Kommentar gesetzt: {text[:60]}")
-        return antwort.get("id")
+        # Als erledigt vormerken: Instagram liefert bei Kommentaren keinen
+        # zuverlässigen Benutzernamen, über den wir eigene erkennen könnten.
+        if kommentar_id:
+            try:
+                store.insert("comment_drafts", {
+                    "comment_id": kommentar_id, "media_id": media_id,
+                    "username": "(eigener Kommentar)", "comment_text": text,
+                    "draft": None, "status": "sent"})
+            except Exception as e:
+                print("Konnte eigenen Kommentar nicht vormerken:", repr(e))
+        return kommentar_id
     except Exception as e:
         print("Erster Kommentar fehlgeschlagen:", repr(e))
         return None

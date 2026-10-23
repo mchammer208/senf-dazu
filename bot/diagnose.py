@@ -102,4 +102,5 @@ elif b and not a:
     print("FUND: Ohne Authorization-Header liefert Supabase nichts zurück.")
     print("Genau diesen Weg nutzt der Bot gerade – das erklärt die leeren Ergebnisse.")
 elif not a and not b:
-    print("Supabase liefert auf keinem Weg Daten. Schlüssel oder Rechte prüfen.")
+    print("Keine wartenden Entwürfe gefunden. Das ist normal, wenn alles gepostet ist –")
+    print("ein Fehler wäre es nur, wenn die Abfrage ohne Filter oben ebenfalls leer bliebe.")

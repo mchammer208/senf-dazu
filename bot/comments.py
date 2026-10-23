@@ -213,9 +213,11 @@ def neue_kommentare():
             if neu >= MAX_DRAFTS_PER_RUN:
                 return
             nummer, hook = hooks.get(m["id"], ("?", (m.get("caption") or "")[:90]))
+            # Instagram gibt den Benutzernamen nicht immer heraus
+            wer = c.get("username") or "jemand"
             try:
                 e = claude.ask_json(SYSTEM_ANTWORT, (
-                    f"Post: {hook}\n\nKommentar von @{c.get('username')}: {c.get('text')}"), max_tokens=900)
+                    f"Post: {hook}\n\nKommentar von {wer}: {c.get('text')}"), max_tokens=900)
             except claude.ApiFehler:
                 raise
             except (ValueError, RuntimeError) as fehler:
@@ -223,10 +225,10 @@ def neue_kommentare():
                 continue
             ignorieren = e.get("empfehlung") == "ignorieren" or not e.get("antwort")
             row = store.insert("comment_drafts", {
-                "comment_id": c["id"], "media_id": m["id"], "username": c.get("username"),
+                "comment_id": c["id"], "media_id": m["id"], "username": c.get("username"),  # darf leer sein
                 "comment_text": c.get("text"), "draft": None if ignorieren else e["antwort"]})
             kopf = (f"💬 <b>#{nummer}</b> „{telegram.esc(hook)}“\n\n"
-                    f"<b>@{telegram.esc(c.get('username'))}:</b> {telegram.esc(c.get('text'))}\n\n")
+                    f"<b>{telegram.esc(wer)}:</b> {telegram.esc(c.get('text'))}\n\n")
             if ignorieren:
                 text = kopf + f"Vorschlag: ignorieren ({telegram.esc(e.get('grund', ''))})"
                 knoepfe = [("🗑 Ignorieren", f"no:{row['id']}")]
