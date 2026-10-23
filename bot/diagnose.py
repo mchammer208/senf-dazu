@@ -59,6 +59,42 @@ try:
 except Exception as e:
     print("Fehler:", repr(e))
 
+GRAPH = "https://graph.instagram.com/v24.0"
+
+
+def ig(pfad, **params):
+    params["access_token"] = IG_TOKEN
+    r = requests.get(f"{GRAPH}/{pfad}", params=params, timeout=30)
+    return r.status_code, r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
+
+
+zeile("Instagram – letzte Beiträge")
+beitraege = []
+try:
+    code, daten = ig("me/media", fields="id,caption,timestamp,comments_count,media_type", limit=10)
+    print(f"HTTP {code}")
+    for m in (daten.get("data") or []):
+        beitraege.append(m["id"])
+        print(f"  {m['id']}  {m.get('media_type')}  {m.get('timestamp')}  "
+              f"Kommentare: {m.get('comments_count')}")
+    if not beitraege:
+        print(f"  keine Beiträge geliefert – Rohantwort: {str(daten)[:300]}")
+except Exception as e:
+    print("Fehler:", repr(e))
+
+zeile("Instagram – Kommentare je Beitrag")
+for mid in beitraege:
+    try:
+        code, daten = ig(f"{mid}/comments", fields="id,text,username,timestamp", limit=50)
+        eintraege = daten.get("data") if isinstance(daten, dict) else None
+        print(f"  {mid}: HTTP {code}, {len(eintraege) if eintraege is not None else '—'} Kommentar(e)")
+        for c in (eintraege or []):
+            print(f"     @{c.get('username')} ({c.get('timestamp')}): {str(c.get('text'))[:80]}")
+        if eintraege is None:
+            print(f"     Rohantwort: {str(daten)[:300]}")
+    except Exception as e:
+        print(f"  {mid}: Fehler {e!r}")
+
 zeile("Ergebnis")
 if a and b:
     print("Supabase antwortet auf beiden Wegen. Das Lesen ist nicht das Problem.")
