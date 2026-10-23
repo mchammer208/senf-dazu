@@ -2,7 +2,7 @@ name: Kommentare
 
 on:
   schedule:
-    - cron: "17 * * * *"   # stündlich
+    - cron: "*/30 * * * *"   # alle 30 Minuten
   workflow_dispatch:
 
 concurrency:
