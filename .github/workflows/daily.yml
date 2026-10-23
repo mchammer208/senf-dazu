@@ -37,4 +37,4 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
-          FORCE: ${{ inputs.force && '1' || '' }}
+          FORCE: ${{ inputs.force }}

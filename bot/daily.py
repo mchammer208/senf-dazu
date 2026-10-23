@@ -139,7 +139,9 @@ def entwurf_anlegen(nummer, topf, post, caption, urls, dateien, titel):
 
 def main():
     dry = "--dry" in sys.argv
-    force = "--force" in sys.argv or os.environ.get("FORCE") == "1"
+    # Der Haken aus dem Workflow kommt als Text an ('true'/'false'), nicht als Ja/Nein.
+    force = ("--force" in sys.argv
+             or os.environ.get("FORCE", "").strip().lower() in ("true", "1", "yes", "ja"))
 
     if not (dry or force):
         if jetzt().hour < POST_HOUR:

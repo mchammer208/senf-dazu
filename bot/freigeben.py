@@ -4,6 +4,7 @@ Aufruf:
   python bot/freigeben.py           neuesten wartenden Entwurf posten
   python bot/freigeben.py --liste   nur anzeigen, was wartet
 """
+import os
 import sys
 import traceback
 
@@ -16,7 +17,17 @@ def wartende():
     return store.select("post_drafts", "status=eq.pending&order=id.desc&limit=20")
 
 
+def nur_anzeigen():
+    """Der Haken aus dem Workflow kommt als Text an ('true'/'false'), nicht als echtes
+    Ja/Nein. Ein schlichtes 'wenn gesetzt' wäre bei 'false' fälschlich wahr."""
+    if "--liste" in sys.argv:
+        return True
+    return os.environ.get("NUR_ANZEIGEN", "").strip().lower() in ("true", "1", "yes", "ja")
+
+
 def main():
+    modus = "NUR ANZEIGEN" if nur_anzeigen() else "POSTEN"
+    print(f"Modus: {modus}")
     offen = wartende()
     if not offen:
         print("Kein wartender Entwurf vorhanden.")
@@ -26,7 +37,8 @@ def main():
     for e in offen:
         print(f"  #{e['nummer']} (id {e['id']}, {e['created_at']}): {e['hook']}")
 
-    if "--liste" in sys.argv:
+    if nur_anzeigen():
+        print("\nNichts gepostet – Haken „Nur anzeigen“ war gesetzt.")
         return
 
     entwurf = offen[0]
