@@ -17,10 +17,10 @@ import claude
 import insta
 import store
 import telegram
-from config import BERLIN, HANDLE, POST_HOUR, TABU, TOEPFE
+from config import BERLIN, POST_HOUR, TABU, TOEPFE
 from render import render
 
-SYSTEM_AUTOR = f"""Du bist die Redaktion von {HANDLE}, einem deutschen Instagram-Account für unpopuläre Meinungen.
+SYSTEM_AUTOR = f"""Du bist die Redaktion eines deutschen Instagram-Account für unpopuläre Meinungen.
 
 Ziel: Eine Meinung, bei der ungefähr die Hälfte der Leute sofort widersprechen will – über harmlose Alltagsthemen. Streit ja, Verletzung nie.
 
@@ -39,7 +39,7 @@ Regeln:
 Antworte ausschließlich mit JSON:
 {{"hook": "...", "argumente": [{{"titel": "...", "text": "..."}}, {{"titel": "...", "text": "..."}}, {{"titel": "...", "text": "..."}}], "cta_frage": "...", "caption": "...", "hashtags": ["#...", "..."]}}"""
 
-SYSTEM_PRUEFER = f"""Du prüfst Instagram-Posts des Accounts {HANDLE} vor der Veröffentlichung. Sei streng.
+SYSTEM_PRUEFER = f"""Du prüfst Instagram-Posts eines Accounts für unpopuläre Meinungen vor der Veröffentlichung. Sei streng.
 
 Nicht ok ist ein Post, wenn er
 - eines dieser Themen berührt: {"; ".join(TABU)}
@@ -130,6 +130,8 @@ def main():
 
     post = erzeugen(topf, [h["hook"] for h in historie])
     post["nummer"] = nummer
+    if not dry:
+        post["handle"] = "@" + insta.me()["username"]  # Name kommt immer aktuell von Instagram
     print("Hook:", post["hook"])
 
     ordner = "out" if dry else tempfile.mkdtemp()

@@ -7,9 +7,9 @@ import claude
 import insta
 import store
 import telegram
-from config import HANDLE, MAX_DRAFTS_PER_RUN, TABU, TG_CHAT
+from config import MAX_DRAFTS_PER_RUN, TABU, TG_CHAT
 
-SYSTEM_ANTWORT = f"""Du antwortest als {HANDLE} (deutscher Account für unpopuläre Meinungen) auf Instagram-Kommentare.
+SYSTEM_ANTWORT = f"""Du antwortest als Betreiber eines deutschen Accounts für unpopuläre Meinungen auf Instagram-Kommentare.
 
 Stil: kurz (max. 200 Zeichen), schlagfertig, freundlich-frech, Du-Ansprache, kein Gendern. Du bleibst bei der Meinung, darfst aber zugeben, wenn ein Argument gut ist. Nie beleidigend, keine erfundenen Fakten, keine Ratschläge zu Gesundheit, Geld oder Recht. Themen, die du nie anfasst: {"; ".join(TABU)}.
 

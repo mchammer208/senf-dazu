@@ -62,6 +62,11 @@ def probelauf():
     from render import render
     post = daily.erzeugen(daily.topf_waehlen([]), [])
     post["nummer"] = 0
+    try:
+        import insta
+        post["handle"] = "@" + insta.me()["username"]
+    except Exception:
+        pass
     dateien = render(post, tempfile.mkdtemp())
     telegram.send_photo(dateien[0], f"Probe-Slide: {post['hook']}")
     return post["hook"]

@@ -1,6 +1,8 @@
-"""Rendert ein Karussell (5 Slides, 1080x1350, JPEG) im @senf.dazu-Look."""
+"""Rendert ein Karussell (5 Slides, 1080x1350, JPEG) im Senf-Look."""
 from PIL import Image, ImageDraw, ImageFont
 import os
+
+from config import HANDLE
 
 F = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts") + os.sep
 BOLD = F + "BricolageGrotesque-Bold.ttf"
@@ -13,6 +15,7 @@ M = 96  # Rand
 SENF = (232, 182, 28)
 CREME = (250, 244, 228)
 SCHWARZ = (20, 18, 16)
+_HANDLE = HANDLE
 
 def font(p, s): return ImageFont.truetype(p, s)
 
@@ -47,7 +50,7 @@ def dezent(fg, bg, a=0.42):
 
 def footer(d, i, n, col, bg):
     fm = font(MONO, 26)
-    d.text((M, H - M - 10), "@senf.dazu", font=fm, fill=col)
+    d.text((M, H - M - 10), _HANDLE, font=fm, fill=col)
     lab = f"{i:02d}/{n:02d}"
     d.text((W - M - fm.getlength(lab), H - M - 10), lab, font=fm, fill=col)
     ki = "KI-generiert"
@@ -61,6 +64,8 @@ def klecks(d, cx, cy, r, col):
     d.ellipse((cx - r * 1.3, cy + r * 0.5, cx - r * 0.85, cy + r * 0.95), fill=col)
 
 def render(post, outdir):
+    global _HANDLE
+    _HANDLE = post.get("handle") or HANDLE
     os.makedirs(outdir, exist_ok=True)
     n = len(post["argumente"]) + 2
     files = []

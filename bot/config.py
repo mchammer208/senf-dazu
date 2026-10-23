@@ -1,4 +1,4 @@
-"""Zentrale Einstellungen für @senf.dazu. Zugänge kommen aus GitHub-Secrets."""
+"""Zentrale Einstellungen für den Senf-Bot. Zugänge kommen aus GitHub-Secrets."""
 import os
 from zoneinfo import ZoneInfo
 
@@ -9,7 +9,7 @@ def env(name, default=""):
 
 # Zugänge
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY")
-CLAUDE_MODEL = env("CLAUDE_MODEL", "claude-sonnet-5")
+CLAUDE_MODEL = env("CLAUDE_MODEL", "claude-sonnet-5-5")
 IG_TOKEN_SECRET = env("IG_ACCESS_TOKEN")
 GRAPH = "https://graph.instagram.com/" + env("GRAPH_VERSION", "v24.0")
 SUPABASE_URL = env("SUPABASE_URL").rstrip("/")
@@ -21,7 +21,7 @@ TG_CHAT = env("TELEGRAM_CHAT_ID")
 BERLIN = ZoneInfo("Europe/Berlin")
 POST_HOUR = 18            # frühestens ab 18:00 Uhr deutscher Zeit posten
 BUCKET = "slides"
-HANDLE = "@senf.dazu"
+HANDLE = env("ACCOUNT_HANDLE", "@gib.senf.dazu")  # nur Fallback – im Betrieb kommt der Name live von Instagram
 MAX_DRAFTS_PER_RUN = 15   # Kommentar-Entwürfe pro Stunde, damit Telegram nicht überläuft
 
 # Themen-Töpfe – der Bot nimmt immer den, der am längsten nicht dran war
