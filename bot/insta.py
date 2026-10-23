@@ -84,5 +84,10 @@ def comments(media_id):
     return _req("GET", f"{media_id}/comments", fields="id,text,username,timestamp", limit=50).get("data", [])
 
 
+def kommentieren(media_id, text):
+    """Schreibt einen Kommentar unter einen eigenen Beitrag (POST /<media>/comments)."""
+    return _req("POST", f"{media_id}/comments", message=text)
+
+
 def reply(comment_id, text):
     return _req("POST", f"{comment_id}/replies", message=text)

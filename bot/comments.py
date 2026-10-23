@@ -57,6 +57,8 @@ def post_freigabe(aktion, entwurf_id, msg, cb_id):
                           f"{telegram.esc(str(e))[:600]}\n\n"
                           f"Der Entwurf bleibt stehen, du kannst es erneut versuchen.")
             return
+        import daily as _d
+        _d.ersten_kommentar_posten(media_id, entwurf.get("post_json"))
         store.insert("posts", {"nummer": entwurf["nummer"], "topf": entwurf["topf"],
                                "hook": entwurf["hook"], "caption": entwurf["caption"],
                                "ig_media_id": media_id})

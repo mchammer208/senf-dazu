@@ -36,9 +36,12 @@ Regeln:
 - Längen: hook max. 90 Zeichen, titel max. 45, text max. 150, cta_frage max. 28.
 - caption: 2–3 kurze Sätze, die zum Kommentieren reizen, endet mit einer Frage. Emojis sparsam erlaubt.
 - hashtags: 5–7 deutsche Hashtags ohne Leerzeichen.
+- erster_kommentar: max. 150 Zeichen, eine zugespitzte Rückfrage, die die Diskussion
+  eröffnet und zum Widerspruch reizt. Du schreibst ihn selbst unter den eigenen Post,
+  also keine Begrüßung und kein „Was meint ihr?“ – lieber konkret und frech nachhaken.
 
 Antworte ausschließlich mit JSON:
-{{"hook": "...", "argumente": [{{"titel": "...", "text": "..."}}, {{"titel": "...", "text": "..."}}, {{"titel": "...", "text": "..."}}], "cta_frage": "...", "caption": "...", "hashtags": ["#...", "..."]}}"""
+{{"hook": "...", "argumente": [{{"titel": "...", "text": "..."}}, {{"titel": "...", "text": "..."}}, {{"titel": "...", "text": "..."}}], "cta_frage": "...", "caption": "...", "hashtags": ["#...", "..."], "erster_kommentar": "..."}}"""
 
 SYSTEM_PRUEFER = f"""Du prüfst Instagram-Posts eines Accounts für unpopuläre Meinungen vor der Veröffentlichung. Sei streng.
 
@@ -119,6 +122,28 @@ def caption_bauen(post):
     return f"{post['caption'].strip()}\n\n{' '.join(tags)}"
 
 
+def ersten_kommentar_posten(media_id, post_json):
+    """Setzt den eröffnenden Kommentar unter den frischen Beitrag.
+
+    Scheitert das, bleibt der Post trotzdem stehen – der Kommentar ist Beiwerk.
+    """
+    try:
+        daten = json.loads(post_json) if isinstance(post_json, str) else (post_json or {})
+        text = (daten.get("erster_kommentar") or "").strip()
+    except (ValueError, TypeError):
+        text = ""
+    if not text:
+        print("Kein erster Kommentar hinterlegt – übersprungen.")
+        return None
+    try:
+        antwort = insta.kommentieren(media_id, text[:2200])
+        print(f"Erster Kommentar gesetzt: {text[:60]}")
+        return antwort.get("id")
+    except Exception as e:
+        print("Erster Kommentar fehlgeschlagen:", repr(e))
+        return None
+
+
 def entwurf_anlegen(nummer, topf, post, caption, urls, dateien, titel):
     """Legt einen Entwurf ab und schickt Album plus Knöpfe nach Telegram."""
     entwurf = store.insert("post_drafts", {
@@ -183,6 +208,7 @@ def main():
         return
 
     media_id = insta.publish_carousel(urls, caption)
+    ersten_kommentar_posten(media_id, post)
     store.insert("posts", {"nummer": nummer, "topf": topf, "hook": post["hook"],
                            "caption": caption, "ig_media_id": media_id})
     telegram.send_album(dateien, f"✅ <b>Post #{nummer}</b> ist online\n„{telegram.esc(post['hook'])}“")

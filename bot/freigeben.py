@@ -46,6 +46,8 @@ def main():
     print(f"\nVeröffentliche Entwurf id {entwurf['id']} mit {len(urls)} Bildern …")
 
     media_id = insta.publish_carousel(urls, entwurf["caption"])
+    import daily
+    daily.ersten_kommentar_posten(media_id, entwurf.get("post_json"))
     store.insert("posts", {"nummer": entwurf["nummer"], "topf": entwurf["topf"],
                            "hook": entwurf["hook"], "caption": entwurf["caption"],
                            "ig_media_id": media_id})
