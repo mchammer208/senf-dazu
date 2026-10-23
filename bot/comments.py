@@ -1,4 +1,5 @@
-"""Stündlich: deine Telegram-Freigaben abarbeiten, dann neue Kommentare als Entwurf schicken."""
+"""Alle 30 Minuten: deine Telegram-Freigaben abarbeiten, dann neue Kommentare als Entwurf schicken."""
+import json
 import sys
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -65,35 +66,61 @@ def post_freigabe(aktion, entwurf_id, msg, cb_id):
     telegram.answer_callback(cb_id)
 
 
-def neuer_vorschlag(alter_entwurf):
-    """Erzeugt sofort einen neuen Entwurf mit derselben Nummer."""
+def _bauen_und_schicken(nummer, topf, post, titel):
+    """Rendert, lädt hoch und schickt einen Entwurf nach Telegram."""
     import tempfile
 
     import daily
     from render import render
+    post["nummer"] = nummer
+    post["handle"] = "@" + insta.me()["username"]
+    dateien = render(post, tempfile.mkdtemp())
+    stempel = daily.jetzt().strftime("%Y%m%d-%H%M%S")
+    urls = [store.upload(f, f"{nummer:04d}-{stempel}/{i + 1:02d}.jpg") for i, f in enumerate(dateien)]
+    caption = post.get("caption_fertig") or daily.caption_bauen(post)
+    return daily.entwurf_anlegen(nummer, topf, post, caption, urls, dateien, titel)
+
+
+def neuer_vorschlag(alter_entwurf):
+    """Erzeugt sofort einen neuen Entwurf mit derselben Nummer."""
+    import daily
     try:
         historie = store.select("posts", "select=nummer,hook,topf&order=id.desc&limit=120")
         alte = [h["hook"] for h in historie] + [alter_entwurf["hook"]]
         post = daily.erzeugen(alter_entwurf["topf"], alte)
-        post["nummer"] = alter_entwurf["nummer"]
-        post["handle"] = "@" + insta.me()["username"]
-        dateien = render(post, tempfile.mkdtemp())
-        stempel = daily.jetzt().strftime("%Y%m%d-%H%M%S")
-        urls = [store.upload(f, f"{post['nummer']:04d}-{stempel}/{i + 1:02d}.jpg")
-                for i, f in enumerate(dateien)]
-        caption = daily.caption_bauen(post)
-        neu = store.insert("post_drafts", {
-            "nummer": post["nummer"], "topf": alter_entwurf["topf"], "hook": post["hook"],
-            "caption": caption, "bild_urls": "\n".join(urls)})
-        telegram.send_album(dateien, f"📝 <b>Neuer Entwurf für Post #{post['nummer']}</b>")
-        mid = telegram.send(
-            f"„{telegram.esc(post['hook'])}“\n\n<b>Bildunterschrift:</b>\n{telegram.esc(caption)}",
-            buttons=[("✅ Posten", f"pok:{neu['id']}"),
-                     ("🔄 Neuer Vorschlag", f"pneu:{neu['id']}"),
-                     ("🗑 Verwerfen", f"pno:{neu['id']}")])
-        store.update("post_drafts", {"id": neu["id"]}, {"telegram_message_id": mid})
+        _bauen_und_schicken(alter_entwurf["nummer"], alter_entwurf["topf"], post,
+                            f"📝 <b>Neuer Entwurf für Post #{alter_entwurf['nummer']}</b>")
     except Exception as e:
         telegram.send(f"🚨 <b>Neuer Vorschlag fehlgeschlagen</b>\n{telegram.esc(str(e))[:600]}")
+
+
+def post_bearbeiten(entwurf, text):
+    """Antwort auf einen Entwurf: neue Bildunterschrift oder – mit 'Hook:' – neuer Spruch."""
+    import daily
+    if text.lower().startswith("hook:"):
+        neuer_hook = text[5:].strip()
+        if not neuer_hook:
+            return "❌ Nach „Hook:“ stand kein Text."
+        try:
+            post = json.loads(entwurf.get("post_json") or "{}")
+            if not post.get("argumente"):
+                return "❌ Für diesen Entwurf fehlen die Originaldaten, nimm „Neuer Vorschlag“."
+            post["hook"] = neuer_hook
+            post["caption_fertig"] = entwurf["caption"]
+            store.update("post_drafts", {"id": entwurf["id"]}, {"status": "rejected"})
+            _bauen_und_schicken(entwurf["nummer"], entwurf["topf"], post,
+                                f"📝 <b>Post #{entwurf['nummer']} mit deinem Hook</b>")
+            return "✏️ Neue Slides sind unterwegs."
+        except Exception as e:
+            return f"❌ Neu rendern fehlgeschlagen: {telegram.esc(str(e))[:200]}"
+
+    neue_caption = text.strip() + "\n\nKI-generiert."
+    store.update("post_drafts", {"id": entwurf["id"]}, {"caption": neue_caption})
+    if entwurf.get("telegram_message_id"):
+        telegram.edit(entwurf["telegram_message_id"],
+                      f"„{telegram.esc(entwurf['hook'])}“\n\n"
+                      f"<b>Bildunterschrift (von dir):</b>\n{telegram.esc(neue_caption)}")
+    return "✏️ Bildunterschrift übernommen. Jetzt oben auf ✅ Posten tippen."
 
 
 def freigaben_abarbeiten():
@@ -134,6 +161,15 @@ def freigaben_abarbeiten():
             text = (msg.get("text") or "").strip()
             if not bezug or not text:
                 continue
+            # Antwort auf einen Post-Entwurf?
+            entwuerfe = store.select("post_drafts", f"telegram_message_id=eq.{bezug['message_id']}")
+            if entwuerfe:
+                if entwuerfe[0]["status"] != "pending":
+                    telegram.send("Dieser Entwurf ist schon erledigt.", reply_to=msg["message_id"])
+                    continue
+                telegram.send(post_bearbeiten(entwuerfe[0], text), reply_to=msg["message_id"])
+                continue
+
             rows = store.select("comment_drafts", f"telegram_message_id=eq.{bezug['message_id']}")
             if not rows or rows[0]["status"] != "pending":
                 continue

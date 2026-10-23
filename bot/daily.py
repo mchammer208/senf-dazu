@@ -5,6 +5,7 @@ Aufruf:
   python bot/daily.py --force  sofort posten
   python bot/daily.py --dry    nur erzeugen und rendern, nichts hochladen
 """
+import json
 import os
 import random
 import re
@@ -118,6 +119,24 @@ def caption_bauen(post):
     return f"{post['caption'].strip()}\n\n{' '.join(tags)}\n\nKI-generiert."
 
 
+def entwurf_anlegen(nummer, topf, post, caption, urls, dateien, titel):
+    """Legt einen Entwurf ab und schickt Album plus Knöpfe nach Telegram."""
+    entwurf = store.insert("post_drafts", {
+        "nummer": nummer, "topf": topf, "hook": post["hook"], "caption": caption,
+        "bild_urls": "\n".join(urls), "post_json": json.dumps(post, ensure_ascii=False)})
+    telegram.send_album(dateien, titel)
+    mid = telegram.send(
+        f"„{telegram.esc(post['hook'])}“\n\n"
+        f"<b>Bildunterschrift:</b>\n{telegram.esc(caption)}\n\n"
+        f"<i>Antworte auf diese Nachricht, um die Bildunterschrift zu ersetzen.\n"
+        f"Mit „Hook: …“ änderst du den Spruch auf Slide 1.</i>",
+        buttons=[("✅ Posten", f"pok:{entwurf['id']}"),
+                 ("🔄 Neuer Vorschlag", f"pneu:{entwurf['id']}"),
+                 ("🗑 Verwerfen", f"pno:{entwurf['id']}")])
+    store.update("post_drafts", {"id": entwurf["id"]}, {"telegram_message_id": mid})
+    return entwurf
+
+
 def main():
     dry = "--dry" in sys.argv
     force = "--force" in sys.argv or os.environ.get("FORCE") == "1"
@@ -156,16 +175,8 @@ def main():
     caption = caption_bauen(post)
 
     if POST_FREIGABE:
-        entwurf = store.insert("post_drafts", {
-            "nummer": nummer, "topf": topf, "hook": post["hook"],
-            "caption": caption, "bild_urls": "\n".join(urls)})
-        telegram.send_album(dateien, f"📝 <b>Entwurf für Post #{nummer}</b> · {telegram.esc(topf)}")
-        mid = telegram.send(
-            f"„{telegram.esc(post['hook'])}“\n\n<b>Bildunterschrift:</b>\n{telegram.esc(caption)}",
-            buttons=[("✅ Posten", f"pok:{entwurf['id']}"),
-                     ("🔄 Neuer Vorschlag", f"pneu:{entwurf['id']}"),
-                     ("🗑 Verwerfen", f"pno:{entwurf['id']}")])
-        store.update("post_drafts", {"id": entwurf["id"]}, {"telegram_message_id": mid})
+        entwurf_anlegen(nummer, topf, post, caption, urls, dateien,
+                        f"📝 <b>Entwurf für Post #{nummer}</b> · {telegram.esc(topf)}")
         print("Entwurf wartet auf deine Freigabe.")
         return
 
