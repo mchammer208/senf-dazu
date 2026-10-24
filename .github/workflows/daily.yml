@@ -2,10 +2,15 @@ name: Täglicher Post
 
 on:
   schedule:
-    # 16:30 und 17:30 UTC → einer davon ist immer 18:30 deutscher Zeit (Sommer- wie Winterzeit).
-    # Das Skript postet nur ab 18 Uhr und nur einmal pro Tag.
+    # GitHub lässt geplante Läufe regelmäßig ausfallen. Deshalb mehrere Anläufe
+    # am Abend: Das Skript postet ohnehin nur ab 18 Uhr deutscher Zeit und nur
+    # einmal pro Tag, zusätzliche Läufe beenden sich nach Sekunden von selbst.
     - cron: "30 16 * * *"
     - cron: "30 17 * * *"
+    - cron: "30 18 * * *"
+    - cron: "30 19 * * *"
+    - cron: "30 20 * * *"
+    - cron: "30 21 * * *"
   workflow_dispatch:
     inputs:
       force:

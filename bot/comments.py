@@ -137,9 +137,27 @@ def post_bearbeiten(entwurf, text):
     return "✏️ Bildunterschrift übernommen. Jetzt oben auf ✅ Posten tippen."
 
 
+def offene_entwuerfe():
+    return (store.select("post_drafts", "status=eq.pending&select=id")
+            + store.select("comment_drafts", "status=eq.pending&select=id"))
+
+
 def freigaben_abarbeiten():
     offset = int((store.get_setting("tg_offset") or {}).get("value") or 0)
-    for u in telegram.updates(offset):
+    neuigkeiten = telegram.updates(offset)
+
+    # Selbstheilung: Steht der Zähler zu hoch, überspringt Telegram jeden Klick
+    # dauerhaft. Wenn nichts kommt, obwohl etwas auf Freigabe wartet, fragen wir
+    # die ganze Warteschlange ab. Doppelte Verarbeitung ist unschädlich, weil
+    # erledigte Entwürfe nicht mehr auf "pending" stehen.
+    if not neuigkeiten and offset and offene_entwuerfe():
+        print(f"Keine Updates bei Zähler {offset}, obwohl Entwürfe warten – "
+              f"frage die komplette Warteschlange ab.")
+        neuigkeiten = telegram.updates(0)
+        if neuigkeiten:
+            print(f"Zähler war verklemmt, {len(neuigkeiten)} Update(s) nachgeholt.")
+
+    for u in neuigkeiten:
         offset = u["update_id"] + 1
 
         if "callback_query" in u:
