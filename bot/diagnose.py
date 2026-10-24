@@ -82,14 +82,23 @@ try:
 except Exception as e:
     print("Fehler:", repr(e))
 
-zeile("Instagram – Kommentare je Beitrag")
+zeile("Instagram – Kommentare je Beitrag (mit Antwortsträngen)")
 for mid in beitraege:
     try:
-        code, daten = ig(f"{mid}/comments", fields="id,text,username,timestamp", limit=50)
+        code, daten = ig(f"{mid}/comments", limit=50,
+                         fields="id,text,username,timestamp,replies{id,text,username,timestamp}")
         eintraege = daten.get("data") if isinstance(daten, dict) else None
-        print(f"  {mid}: HTTP {code}, {len(eintraege) if eintraege is not None else '—'} Kommentar(e)")
+        print(f"  {mid}: HTTP {code}, {len(eintraege) if eintraege is not None else '—'} "
+              f"Kommentar(e) auf oberster Ebene")
         for c in (eintraege or []):
-            print(f"     @{c.get('username')} ({c.get('timestamp')}): {str(c.get('text'))[:80]}")
+            antworten = (c.get("replies") or {}).get("data") or []
+            print(f"     ┌ @{c.get('username')} ({c.get('timestamp')}) id {c.get('id')}")
+            print(f"     │  {str(c.get('text'))[:100]}")
+            for a in antworten:
+                print(f"     └─ Antwort @{a.get('username')} ({a.get('timestamp')}) id {a.get('id')}")
+                print(f"           {str(a.get('text'))[:100]}")
+            if not antworten:
+                print(f"     └─ (keine Antworten darunter)")
         if eintraege is None:
             print(f"     Rohantwort: {str(daten)[:300]}")
     except Exception as e:
