@@ -95,6 +95,44 @@ for mid in beitraege:
     except Exception as e:
         print(f"  {mid}: Fehler {e!r}")
 
+TG = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+
+zeile("Telegram – Bot und Warteschlange")
+if not TG:
+    print("Kein TELEGRAM_BOT_TOKEN gesetzt.")
+else:
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{TG}/getMe", timeout=20).json()
+        print("getMe:", str(r.get("result"))[:200])
+    except Exception as e:
+        print("getMe Fehler:", repr(e))
+
+    # Ein gesetzter Webhook saugt alle Updates ab – dann bekommt getUpdates nie etwas
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{TG}/getWebhookInfo", timeout=20).json()
+        info = r.get("result", {})
+        print(f"Webhook-URL: {info.get('url') or '(keiner – richtig so)'}")
+        print(f"   ausstehende Updates: {info.get('pending_update_count')}")
+        if info.get("last_error_message"):
+            print(f"   letzter Fehler: {info.get('last_error_message')}")
+    except Exception as e:
+        print("getWebhookInfo Fehler:", repr(e))
+
+    # Warteschlange ansehen, ohne sie zu bestätigen
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{TG}/getUpdates",
+                         params={"offset": 0, "timeout": 0}, timeout=30).json()
+        liste = r.get("result", [])
+        print(f"getUpdates(0): ok={r.get('ok')}, {len(liste)} Update(s)")
+        if not r.get("ok"):
+            print("   Fehler:", str(r)[:300])
+        for u in liste:
+            art = "Klick " + str(u.get("callback_query", {}).get("data")) \
+                  if "callback_query" in u else "Nachricht"
+            print(f"   id {u.get('update_id')}: {art}")
+    except Exception as e:
+        print("getUpdates Fehler:", repr(e))
+
 zeile("Ergebnis")
 if a and b:
     print("Supabase antwortet auf beiden Wegen. Das Lesen ist nicht das Problem.")
