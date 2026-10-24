@@ -142,14 +142,18 @@ def offene_entwuerfe():
             + store.select("comment_drafts", "status=eq.pending&select=id"))
 
 
-def freigaben_abarbeiten():
+def einsammeln():
+    """Holt Telegram-Updates ab und legt sie in der Eingangstabelle ab.
+
+    Telegram hält einen Knopfdruck nur kurz vor. Deshalb sammelt der Dienst
+    tg-poll in Supabase jede Minute ein; dieser Durchgang hier ist nur die
+    Rückfallebene, falls der einmal nicht läuft."""
     offset = int((store.get_setting("tg_offset") or {}).get("value") or 0)
     neuigkeiten = telegram.updates(offset)
 
     # Selbstheilung: Steht der Zähler zu hoch, überspringt Telegram jeden Klick
     # dauerhaft. Wenn nichts kommt, obwohl etwas auf Freigabe wartet, fragen wir
-    # die ganze Warteschlange ab. Doppelte Verarbeitung ist unschädlich, weil
-    # erledigte Entwürfe nicht mehr auf "pending" stehen.
+    # die ganze Warteschlange ab. Doppelte Einträge fängt der Schlüssel ab.
     if not neuigkeiten and offset and offene_entwuerfe():
         print(f"Keine Updates bei Zähler {offset}, obwohl Entwürfe warten – "
               f"frage die komplette Warteschlange ab.")
@@ -158,65 +162,101 @@ def freigaben_abarbeiten():
             print(f"Zähler war verklemmt, {len(neuigkeiten)} Update(s) nachgeholt.")
 
     for u in neuigkeiten:
-        offset = u["update_id"] + 1
+        store.insert_ignore("tg_inbox", {"update_id": u["update_id"], "payload": u})
+        offset = max(offset, u["update_id"] + 1)
+    if neuigkeiten:
+        store.set_setting("tg_offset", offset)
 
-        if "callback_query" in u:
-            cq = u["callback_query"]
-            msg = cq.get("message", {})
-            if str(msg.get("chat", {}).get("id")) != TG_CHAT:
-                print(f"Klick aus fremdem Chat ignoriert: {msg.get('chat', {}).get('id')}")
-                continue
-            aktion, _, did = cq.get("data", "").partition(":")
-            print(f"Klick empfangen: {aktion}:{did}")
 
-            if aktion.startswith("p"):          # Post-Entwurf statt Kommentar
-                post_freigabe(aktion, did, msg, cq["id"])
-                continue
+def ein_update(u):
+    """Verarbeitet genau einen Eintrag: Knopfdruck oder Antwort-Nachricht."""
+    if "callback_query" in u:
+        cq = u["callback_query"]
+        msg = cq.get("message", {})
+        if str(msg.get("chat", {}).get("id")) != TG_CHAT:
+            print(f"Klick aus fremdem Chat ignoriert: {msg.get('chat', {}).get('id')}")
+            return
+        aktion, _, did = cq.get("data", "").partition(":")
+        print(f"Klick empfangen: {aktion}:{did}")
 
-            rows = store.select("comment_drafts", f"id=eq.{did}")
-            if not rows or rows[0]["status"] != "pending":
-                print(f"Kein wartender Kommentar-Entwurf mit id {did}")
-                telegram.answer_callback(cq["id"], "Schon erledigt")
-                continue
-            row = rows[0]
-            alt = telegram.esc(msg.get("text", ""))
-            if aktion == "ok" and row["draft"]:
-                ergebnis = senden(row, row["draft"])
-                telegram.edit(msg["message_id"], f"{alt}\n\n{ergebnis}")
-            elif aktion == "no":
-                store.update("comment_drafts", {"id": row["id"]}, {"status": "ignored"})
-                telegram.edit(msg["message_id"], f"{alt}\n\n🗑 Ignoriert")
-            telegram.answer_callback(cq["id"])
+        if aktion.startswith("p"):          # Post-Entwurf statt Kommentar
+            post_freigabe(aktion, did, msg, cq["id"])
+            return
 
-        elif "message" in u:
-            msg = u["message"]
-            if str(msg.get("chat", {}).get("id")) != TG_CHAT:
-                continue
-            bezug = msg.get("reply_to_message")
-            text = (msg.get("text") or "").strip()
-            if not bezug or not text:
-                continue
-            # Antwort auf einen Post-Entwurf?
-            entwuerfe = store.select("post_drafts", f"telegram_message_id=eq.{bezug['message_id']}")
-            if entwuerfe:
-                if entwuerfe[0]["status"] != "pending":
-                    telegram.send("Dieser Entwurf ist schon erledigt.", reply_to=msg["message_id"])
-                    continue
-                telegram.send(post_bearbeiten(entwuerfe[0], text), reply_to=msg["message_id"])
-                continue
+        rows = store.select("comment_drafts", f"id=eq.{did}")
+        if not rows or rows[0]["status"] != "pending":
+            print(f"Kein wartender Kommentar-Entwurf mit id {did}")
+            telegram.answer_callback(cq["id"], "Schon erledigt")
+            return
+        row = rows[0]
+        alt = telegram.esc(msg.get("text", ""))
+        if aktion == "ok" and row["draft"]:
+            ergebnis = senden(row, row["draft"])
+            telegram.edit(msg["message_id"], f"{alt}\n\n{ergebnis}")
+        elif aktion == "no":
+            store.update("comment_drafts", {"id": row["id"]}, {"status": "ignored"})
+            telegram.edit(msg["message_id"], f"{alt}\n\n🗑 Ignoriert")
+        telegram.answer_callback(cq["id"])
 
-            rows = store.select("comment_drafts", f"telegram_message_id=eq.{bezug['message_id']}")
-            if not rows or rows[0]["status"] != "pending":
-                continue
-            telegram.send(senden(rows[0], text), reply_to=msg["message_id"])
+    elif "message" in u:
+        msg = u["message"]
+        if str(msg.get("chat", {}).get("id")) != TG_CHAT:
+            return
+        bezug = msg.get("reply_to_message")
+        text = (msg.get("text") or "").strip()
+        if not bezug or not text:
+            return
+        # Antwort auf einen Post-Entwurf?
+        entwuerfe = store.select("post_drafts", f"telegram_message_id=eq.{bezug['message_id']}")
+        if entwuerfe:
+            if entwuerfe[0]["status"] != "pending":
+                telegram.send("Dieser Entwurf ist schon erledigt.", reply_to=msg["message_id"])
+                return
+            telegram.send(post_bearbeiten(entwuerfe[0], text), reply_to=msg["message_id"])
+            return
 
-    store.set_setting("tg_offset", offset)
+        rows = store.select("comment_drafts", f"telegram_message_id=eq.{bezug['message_id']}")
+        if not rows or rows[0]["status"] != "pending":
+            return
+        telegram.send(senden(rows[0], text), reply_to=msg["message_id"])
+
+
+def freigaben_abarbeiten():
+    """Arbeitet ab, was in der Eingangstabelle liegt."""
+    einsammeln()
+    offen = store.select("tg_inbox", "verarbeitet=is.false&order=update_id.asc&limit=100")
+    print(f"Eingangstabelle: {len(offen)} unerledigte(r) Eintrag/Einträge")
+
+    for eintrag in offen:
+        try:
+            ein_update(eintrag["payload"])
+        except Exception as fehler:   # ein kaputter Klick darf den Lauf nicht kippen
+            traceback.print_exc()
+            telegram.send(f"⚠️ Ein Klick ließ sich nicht ausführen:\n"
+                          f"{telegram.esc(str(fehler))[:400]}\n\n"
+                          f"Der Entwurf wartet weiter – nutze <b>Actions → Entwurf freigeben</b>.")
+        store.update("tg_inbox", {"update_id": eintrag["update_id"]}, {"verarbeitet": True})
+
+    # Erledigtes nach einer Woche räumen, damit die Tabelle nicht endlos wächst
+    grenze = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    store.delete("tg_inbox", f"verarbeitet=is.true&created_at=lt.{grenze}")
+
+
+def eroeffnungskommentare():
+    """Die Kommentare, die der Account selbst unter seine Beiträge gesetzt hat.
+
+    Sie sind der Kontext, auf den die Leute meist antworten – ohne sie liest sich
+    ein Kommentar wie eine Antwort auf eine ungestellte Frage."""
+    rows = store.select("comment_drafts",
+                        "username=like.*eigener*&select=media_id,comment_text&order=id.asc")
+    return {r["media_id"]: (r["comment_text"] or "") for r in rows}
 
 
 def neue_kommentare():
     ich = insta.me()["username"]
     hooks = {p["ig_media_id"]: (p["nummer"], p["hook"])
              for p in store.select("posts", "select=nummer,hook,ig_media_id&order=id.desc&limit=30")}
+    eroeffnung = eroeffnungskommentare()
     grenze = datetime.now(timezone.utc) - timedelta(days=7)
     neu = 0
     for m in insta.recent_media(10):
@@ -233,9 +273,13 @@ def neue_kommentare():
             nummer, hook = hooks.get(m["id"], ("?", (m.get("caption") or "")[:90]))
             # Instagram gibt den Benutzernamen nicht immer heraus
             wer = c.get("username") or "jemand"
+            mein_kommentar = eroeffnung.get(m["id"], "")
             try:
-                e = claude.ask_json(SYSTEM_ANTWORT, (
-                    f"Post: {hook}\n\nKommentar von {wer}: {c.get('text')}"), max_tokens=900)
+                frage = f"Post: {hook}\n"
+                if mein_kommentar:
+                    frage += f"\nDein eigener erster Kommentar darunter: {mein_kommentar}\n"
+                frage += f"\nKommentar von {wer}: {c.get('text')}"
+                e = claude.ask_json(SYSTEM_ANTWORT, frage, max_tokens=900)
             except claude.ApiFehler:
                 raise
             except (ValueError, RuntimeError) as fehler:
@@ -245,8 +289,10 @@ def neue_kommentare():
             row = store.insert("comment_drafts", {
                 "comment_id": c["id"], "media_id": m["id"], "username": c.get("username"),  # darf leer sein
                 "comment_text": c.get("text"), "draft": None if ignorieren else e["antwort"]})
-            kopf = (f"💬 <b>#{nummer}</b> „{telegram.esc(hook)}“\n\n"
-                    f"<b>{telegram.esc(wer)}:</b> {telegram.esc(c.get('text'))}\n\n")
+            kopf = f"💬 <b>#{nummer}</b> „{telegram.esc(hook)}“\n\n"
+            if mein_kommentar:
+                kopf += f"<i>Dein Einstieg: {telegram.esc(mein_kommentar)}</i>\n\n"
+            kopf += f"<b>{telegram.esc(wer)}:</b> {telegram.esc(c.get('text'))}\n\n"
             if ignorieren:
                 text = kopf + f"Vorschlag: ignorieren ({telegram.esc(e.get('grund', ''))})"
                 knoepfe = [("🗑 Ignorieren", f"no:{row['id']}")]

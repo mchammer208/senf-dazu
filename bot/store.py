@@ -35,6 +35,19 @@ def insert(table, row):
     return _check(r, f"insert {table}").json()[0]
 
 
+def insert_ignore(table, row):
+    """Legt eine Zeile ab und schweigt, wenn sie schon da ist (gleicher Schlüssel)."""
+    r = requests.post(f"{SUPABASE_URL}/rest/v1/{table}", json=row, timeout=30,
+                      headers=_h({"Content-Type": "application/json",
+                                  "Prefer": "resolution=ignore-duplicates,return=minimal"}))
+    _check(r, f"insert {table}")
+
+
+def delete(table, query):
+    r = requests.delete(f"{SUPABASE_URL}/rest/v1/{table}?{query}", headers=_h(), timeout=30)
+    _check(r, f"delete {table}")
+
+
 def update(table, match, values):
     q = "&".join(f"{k}=eq.{v}" for k, v in match.items())
     r = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}?{q}", json=values, timeout=30,
