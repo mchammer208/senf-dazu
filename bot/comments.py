@@ -61,7 +61,8 @@ def post_freigabe(aktion, entwurf_id, msg, cb_id):
         _d.ersten_kommentar_posten(media_id, entwurf.get("post_json"))
         store.insert("posts", {"nummer": entwurf["nummer"], "topf": entwurf["topf"],
                                "hook": entwurf["hook"], "caption": entwurf["caption"],
-                               "ig_media_id": media_id, "schaerfe": entwurf.get("schaerfe")})
+                               "ig_media_id": media_id, "schaerfe": entwurf.get("schaerfe"),
+                               "hebel": entwurf.get("hebel")})
         store.update("post_drafts", {"id": entwurf["id"]}, {"status": "published"})
         print("Veröffentlicht:", media_id)
         telegram.edit(msg["message_id"], f"{alt}\n\n✅ Ist online")
@@ -99,11 +100,17 @@ def neuer_vorschlag(alter_entwurf):
     """Erzeugt sofort einen neuen Entwurf mit derselben Nummer."""
     import daily
     try:
-        historie = store.select("posts", "select=nummer,hook,topf&order=id.desc&limit=120")
+        historie = store.select("posts", "select=nummer,hook,topf,hebel&order=id.desc&limit=120")
         alte = [h["hook"] for h in historie] + [alter_entwurf["hook"]]
-        post = daily.erzeugen(alter_entwurf["topf"], alte)
+        # Der verworfene Entwurf hat offenbar nicht gezündet – also einen anderen Hebel
+        # ansetzen statt denselben noch einmal zu versuchen.
+        hebel = daily.hebel_waehlen([{"hebel": alter_entwurf.get("hebel")}] + historie)
+        stufe = daily.schaerfe_heute()
+        post = daily.erzeugen(alter_entwurf["topf"], alte, stufe, hebel)
+        post["schaerfe"], post["hebel"] = stufe, hebel
         _bauen_und_schicken(alter_entwurf["nummer"], alter_entwurf["topf"], post,
-                            f"📝 <b>Neuer Entwurf für Post #{alter_entwurf['nummer']}</b>")
+                            f"📝 <b>Neuer Entwurf für Post #{alter_entwurf['nummer']}</b> "
+                            f"· {telegram.esc(hebel)}")
     except Exception as e:
         telegram.send(f"🚨 <b>Neuer Vorschlag fehlgeschlagen</b>\n{telegram.esc(str(e))[:600]}")
 

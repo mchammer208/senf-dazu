@@ -18,7 +18,7 @@ import claude
 import insta
 import store
 import telegram
-from config import BERLIN, POST_FREIGABE, POST_HOUR, TABU, TOEPFE
+from config import BERLIN, HEBEL, POST_FREIGABE, POST_HOUR, TABU, TOEPFE
 from render import render
 
 STUFE_2 = """Schärfegrad heute: 2 von 3. Ein klares Urteil über eine verbreitete Gewohnheit.
@@ -36,7 +36,7 @@ der Gewohnheit, nicht nur die Gewohnheit selbst. Beispiele für die Tonlage – 
 Die Grenze unten gilt unverändert: Gewohnheiten ja, Menschen nein."""
 
 
-def system_autor(stufe):
+def system_autor(stufe, hebel):
     return f"""Du bist die Redaktion eines deutschen Instagram-Accounts für unpopuläre Meinungen.
 
 Ziel: Eine Meinung, bei der ungefähr die Hälfte der Leute sofort widersprechen WILL – und sich dabei selbst gemeint fühlt.
@@ -45,9 +45,16 @@ Das Wichtigste: Richte dich gegen eine GEWOHNHEIT, nicht gegen einen Gegenstand.
 
 Die Grenze: Du beurteilst, was Leute TUN – freiwillige Gewohnheiten, Rituale, Umgangsformen. Du beurteilst nie, was Leute SIND. Herkunft, Geschlecht, Alter, Aussehen, Behinderung, Sexualität, Beruf und Einkommen kommen nicht vor, auch nicht angedeutet.
 
+Hebel für heute: {hebel}
+{HEBEL[hebel]}
+
 {STUFE_3 if stufe >= 3 else STUFE_2}
 
-Ton: trocken, bestimmt, selbstbewusst. Die Behauptung steht ohne Rückversicherung – kein „finde ich“, kein „vielleicht“, kein entschuldigendes Zwinkern am Satzende. Witzig ja, aber die Pointe darf die These nicht entschärfen. Du-Ansprache, kein Gendern, deutsche Alltagssprache, gern mit regionalem Einschlag. Nie beleidigend, nie herabsetzend, nie bitter – frech und bestimmt, nicht verbittert.
+Der Hook ist EIN Satz und nichts als das Urteil. Kein zweiter Satz, der die These wieder einfängt. „Wer Kaffee to go holt, trinkt keinen Kaffee. Er trägt ihn spazieren.“ ist genau der Fehler: der Nachklapp ist charmant und nimmt dem Vorwurf damit die Spitze – nach so einem Satz lacht man und scrollt weiter, statt zu widersprechen. Lass den Nachklapp weg, dann bleibt der Streit stehen. (Ausnahme: beim Hebel Heuchelei dürfen es zwei Sätze sein, wenn der zweite die Unterstellung verschärft statt sie aufzulösen.)
+
+Es muss etwas auf dem Spiel stehen. Die These soll etwas darüber behaupten, wie rücksichtsvoll, geschmackssicher oder ehrlich jemand handelt – daran hängt ein Selbstbild, und deshalb wird kommentiert. Eine reine Geschmacksfrage über einen Gegenstand reizt niemanden.
+
+Ton: trocken, bestimmt, selbstbewusst. Die Behauptung steht ohne Rückversicherung – kein „finde ich“, kein „vielleicht“, kein entschuldigendes Zwinkern am Satzende. Witzig darf es sein, aber der Witz liegt in der Härte der Beobachtung, nicht in einer versöhnlichen Pointe. Du-Ansprache, kein Gendern, deutsche Alltagssprache, gern mit regionalem Einschlag. Nie beleidigend, nie herabsetzend, nie bitter – frech und bestimmt, nicht verbittert.
 
 Niemals diese Themen: {"; ".join(TABU)}.
 
@@ -123,12 +130,21 @@ def schaerfe_heute():
     return 3 if jetzt().weekday() in (4, 5) else 2
 
 
-def erzeugen(topf, alte_hooks, stufe=2, versuche=5):
+def hebel_waehlen(historie):
+    """Zieht den Hebel, der am längsten nicht dran war – wie bei den Themenbereichen."""
+    benutzt = [h.get("hebel") for h in historie]   # neueste zuerst
+    kandidaten = list(HEBEL)
+    random.shuffle(kandidaten)
+    return max(kandidaten, key=lambda x: benutzt.index(x) if x in benutzt else 10**6)
+
+
+def erzeugen(topf, alte_hooks, stufe=2, hebel=None, versuche=5):
+    hebel = hebel or random.choice(list(HEBEL))
     liste = "\n".join(f"- {h}" for h in alte_hooks[:120]) or "- (noch keine)"
     gruende = []
     for _ in range(versuche):
         try:
-            post = claude.ask_json(system_autor(stufe), (
+            post = claude.ask_json(system_autor(stufe, hebel), (
                 f"Themenbereich heute: {topf}.\n\n"
                 f"Diese Meinungen gab es schon – nicht wiederholen, auch nicht sinngemäß:\n{liste}\n\n"
                 "Liefere eine neue."))
@@ -196,7 +212,7 @@ def entwurf_anlegen(nummer, topf, post, caption, urls, dateien, titel):
     """Legt einen Entwurf ab und schickt Album plus Knöpfe nach Telegram."""
     entwurf = store.insert("post_drafts", {
         "nummer": nummer, "topf": topf, "hook": post["hook"], "caption": caption,
-        "schaerfe": post.get("schaerfe"),
+        "schaerfe": post.get("schaerfe"), "hebel": post.get("hebel"),
         "bild_urls": "\n".join(urls), "post_json": json.dumps(post, ensure_ascii=False)})
     telegram.send_album(dateien, titel)
     mid = telegram.send(
@@ -233,11 +249,13 @@ def main():
     nummer = (historie[0]["nummer"] + 1) if historie else 1
     topf = topf_waehlen(historie)
     stufe = schaerfe_heute()
-    print(f"Post #{nummer} – Thema: {topf} – Schärfegrad {stufe}")
+    hebel = hebel_waehlen(historie)
+    print(f"Post #{nummer} – Thema: {topf} – Hebel: {hebel} – Schärfegrad {stufe}")
 
-    post = erzeugen(topf, [h["hook"] for h in historie], stufe)
+    post = erzeugen(topf, [h["hook"] for h in historie], stufe, hebel)
     post["nummer"] = nummer
     post["schaerfe"] = stufe
+    post["hebel"] = hebel
     if not dry:
         post["handle"] = "@" + insta.me()["username"]  # Name kommt immer aktuell von Instagram
     print("Hook:", post["hook"])
@@ -254,7 +272,8 @@ def main():
 
     if POST_FREIGABE:
         entwurf_anlegen(nummer, topf, post, caption, urls, dateien,
-                        f"📝 <b>Entwurf für Post #{nummer}</b> · {telegram.esc(topf)}")
+                        f"📝 <b>Entwurf für Post #{nummer}</b> · {telegram.esc(topf)}\n"
+                        f"Hebel: {telegram.esc(hebel)} · Schärfe {stufe}")
         print("Entwurf wartet auf deine Freigabe.")
         return
 
@@ -262,7 +281,8 @@ def main():
     ersten_kommentar_posten(media_id, post)
     store.insert("posts", {"nummer": nummer, "topf": topf, "hook": post["hook"],
                            "caption": caption, "ig_media_id": media_id,
-                           "schaerfe": post.get("schaerfe")})
+                           "schaerfe": post.get("schaerfe"),
+                           "hebel": post.get("hebel")})
     telegram.send_album(dateien, f"✅ <b>Post #{nummer}</b> ist online\n„{telegram.esc(post['hook'])}“")
     print("Veröffentlicht:", media_id)
 

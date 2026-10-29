@@ -50,7 +50,8 @@ def main():
     daily.ersten_kommentar_posten(media_id, entwurf.get("post_json"))
     store.insert("posts", {"nummer": entwurf["nummer"], "topf": entwurf["topf"],
                            "hook": entwurf["hook"], "caption": entwurf["caption"],
-                           "ig_media_id": media_id, "schaerfe": entwurf.get("schaerfe")})
+                           "ig_media_id": media_id, "schaerfe": entwurf.get("schaerfe"),
+                           "hebel": entwurf.get("hebel")})
     store.update("post_drafts", {"id": entwurf["id"]}, {"status": "published"})
 
     # Alle älteren Entwürfe derselben Nummer aus dem Weg räumen
