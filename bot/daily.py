@@ -21,11 +21,33 @@ import telegram
 from config import BERLIN, POST_FREIGABE, POST_HOUR, TABU, TOEPFE
 from render import render
 
-SYSTEM_AUTOR = f"""Du bist die Redaktion eines deutschen Instagram-Account für unpopuläre Meinungen.
+STUFE_2 = """Schärfegrad heute: 2 von 3. Ein klares Urteil über eine verbreitete Gewohnheit.
+Beispiele für die Tonlage – nicht übernehmen, nur als Maß:
+- Wer ohne Vorwarnung anruft, überfällt dich.
+- Beim Wichteln im Büro gewinnt niemand.
+- Der Weihnachtsmarkt ist überteuerter Glühwein im Gedränge."""
 
-Ziel: Eine Meinung, bei der ungefähr die Hälfte der Leute sofort widersprechen will – über harmlose Alltagsthemen. Streit ja, Verletzung nie.
+STUFE_3 = """Schärfegrad heute: 3 von 3 – heute darf es zwicken. Unterstelle das Motiv hinter
+der Gewohnheit, nicht nur die Gewohnheit selbst. Beispiele für die Tonlage – nicht
+übernehmen, nur als Maß:
+- Niemand mag Grillabende, alle tun nur so, weil Absagen unhöflich wäre.
+- Pünktlichkeit ist keine Tugend, sondern Angst.
+- Sprachnachrichten sind Faulheit, die sich als Nähe verkauft.
+Die Grenze unten gilt unverändert: Gewohnheiten ja, Menschen nein."""
 
-Ton: frech, witzig, selbstbewusst, augenzwinkernd, nie gemein. Du-Ansprache. Kein Gendern. Deutsche Alltagssprache, gern mit regionalem Einschlag.
+
+def system_autor(stufe):
+    return f"""Du bist die Redaktion eines deutschen Instagram-Accounts für unpopuläre Meinungen.
+
+Ziel: Eine Meinung, bei der ungefähr die Hälfte der Leute sofort widersprechen WILL – und sich dabei selbst gemeint fühlt.
+
+Das Wichtigste: Richte dich gegen eine GEWOHNHEIT, nicht gegen einen Gegenstand. „Der Brotkanten ist das Schlechteste am Laib“ ist eine Geschmacksfrage, da zuckt man mit der Schulter und scrollt weiter. „Wer ohne Vorwarnung anruft, überfällt dich“ ist ein Urteil über etwas, das viele tun und für richtig halten – da tippen Leute, weil sie sich verteidigen müssen. Nimm immer das Zweite.
+
+Die Grenze: Du beurteilst, was Leute TUN – freiwillige Gewohnheiten, Rituale, Umgangsformen. Du beurteilst nie, was Leute SIND. Herkunft, Geschlecht, Alter, Aussehen, Behinderung, Sexualität, Beruf und Einkommen kommen nicht vor, auch nicht angedeutet.
+
+{STUFE_3 if stufe >= 3 else STUFE_2}
+
+Ton: trocken, bestimmt, selbstbewusst. Die Behauptung steht ohne Rückversicherung – kein „finde ich“, kein „vielleicht“, kein entschuldigendes Zwinkern am Satzende. Witzig ja, aber die Pointe darf die These nicht entschärfen. Du-Ansprache, kein Gendern, deutsche Alltagssprache, gern mit regionalem Einschlag. Nie beleidigend, nie herabsetzend, nie bitter – frech und bestimmt, nicht verbittert.
 
 Niemals diese Themen: {"; ".join(TABU)}.
 
@@ -53,6 +75,13 @@ Nicht ok ist ein Post, wenn er
 - reale Personen, Marken oder Unternehmen nennt oder angreift
 - rechtliche, medizinische oder finanzielle Ratschläge gibt
 - inhaltlich einer bereits geposteten Meinung zu ähnlich ist
+
+Ausdrücklich in Ordnung ist ein scharfes, auch vorwurfsvolles Urteil über eine freiwillige
+Gewohnheit, ein Ritual oder eine Umgangsform – selbst wenn sich viele Leser angegriffen
+fühlen werden. Genau dafür ist der Account da. Lehne einen Post nicht ab, nur weil er
+streitlustig, zugespitzt oder respektlos gegenüber einer beliebten Gewohnheit ist.
+Entscheidend ist allein: greift er Menschen für das an, was sie sind, oder nur für das,
+was sie tun? Das Erste ist nicht ok, das Zweite ist der Zweck.
 
 Antworte ausschließlich mit JSON: {{"ok": true/false, "grund": "kurz"}}"""
 
@@ -86,12 +115,20 @@ def laengen_ok(p):
         return False
 
 
-def erzeugen(topf, alte_hooks, versuche=5):
+def schaerfe_heute():
+    """Freitag und Samstag einen Ausreißer nach oben, sonst Stufe 2.
+
+    So lässt sich später an den Zahlen vergleichen, ob die harten Posts wirklich
+    mehr bringen – ohne dass der Account dauerhaft auf Anschlag läuft."""
+    return 3 if jetzt().weekday() in (4, 5) else 2
+
+
+def erzeugen(topf, alte_hooks, stufe=2, versuche=5):
     liste = "\n".join(f"- {h}" for h in alte_hooks[:120]) or "- (noch keine)"
     gruende = []
     for _ in range(versuche):
         try:
-            post = claude.ask_json(SYSTEM_AUTOR, (
+            post = claude.ask_json(system_autor(stufe), (
                 f"Themenbereich heute: {topf}.\n\n"
                 f"Diese Meinungen gab es schon – nicht wiederholen, auch nicht sinngemäß:\n{liste}\n\n"
                 "Liefere eine neue."))
@@ -159,6 +196,7 @@ def entwurf_anlegen(nummer, topf, post, caption, urls, dateien, titel):
     """Legt einen Entwurf ab und schickt Album plus Knöpfe nach Telegram."""
     entwurf = store.insert("post_drafts", {
         "nummer": nummer, "topf": topf, "hook": post["hook"], "caption": caption,
+        "schaerfe": post.get("schaerfe"),
         "bild_urls": "\n".join(urls), "post_json": json.dumps(post, ensure_ascii=False)})
     telegram.send_album(dateien, titel)
     mid = telegram.send(
@@ -194,10 +232,12 @@ def main():
     historie = store.select("posts", "select=nummer,hook,topf&order=id.desc&limit=120") if not dry else []
     nummer = (historie[0]["nummer"] + 1) if historie else 1
     topf = topf_waehlen(historie)
-    print(f"Post #{nummer} – Thema: {topf}")
+    stufe = schaerfe_heute()
+    print(f"Post #{nummer} – Thema: {topf} – Schärfegrad {stufe}")
 
-    post = erzeugen(topf, [h["hook"] for h in historie])
+    post = erzeugen(topf, [h["hook"] for h in historie], stufe)
     post["nummer"] = nummer
+    post["schaerfe"] = stufe
     if not dry:
         post["handle"] = "@" + insta.me()["username"]  # Name kommt immer aktuell von Instagram
     print("Hook:", post["hook"])
@@ -221,7 +261,8 @@ def main():
     media_id = insta.publish_carousel(urls, caption)
     ersten_kommentar_posten(media_id, post)
     store.insert("posts", {"nummer": nummer, "topf": topf, "hook": post["hook"],
-                           "caption": caption, "ig_media_id": media_id})
+                           "caption": caption, "ig_media_id": media_id,
+                           "schaerfe": post.get("schaerfe")})
     telegram.send_album(dateien, f"✅ <b>Post #{nummer}</b> ist online\n„{telegram.esc(post['hook'])}“")
     print("Veröffentlicht:", media_id)
 

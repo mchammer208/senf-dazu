@@ -61,7 +61,7 @@ def post_freigabe(aktion, entwurf_id, msg, cb_id):
         _d.ersten_kommentar_posten(media_id, entwurf.get("post_json"))
         store.insert("posts", {"nummer": entwurf["nummer"], "topf": entwurf["topf"],
                                "hook": entwurf["hook"], "caption": entwurf["caption"],
-                               "ig_media_id": media_id})
+                               "ig_media_id": media_id, "schaerfe": entwurf.get("schaerfe")})
         store.update("post_drafts", {"id": entwurf["id"]}, {"status": "published"})
         print("Veröffentlicht:", media_id)
         telegram.edit(msg["message_id"], f"{alt}\n\n✅ Ist online")

@@ -41,6 +41,11 @@ TOEPFE = [
     "Sprache, Dialekte und Redewendungen",
     "Einkaufen und Supermarkt",
     "Auto, Bahn und Unterwegssein",
+    "Höflichkeit und Etikette",
+    "Feiern und Einladungen",
+    "Handy und Erreichbarkeit",
+    "Nachbarschaft und Treppenhaus",
+    "Kleidung im Alltag",
 ]
 
 # Diese Themen fasst der Bot nie an
@@ -51,7 +56,8 @@ TABU = [
     "Geld-, Anlage-, Steuer- und Rechtstipps",
     "echte, namentlich genannte Personen",
     "Marken oder Unternehmen schlechtmachen",
-    "Menschengruppen (Herkunft, Geschlecht, Alter, Aussehen, Behinderung, Sexualität, Beruf)",
+    "Menschen abwerten für das, was sie sind – Herkunft, Geschlecht, Alter, Aussehen, "
+    "Behinderung, Sexualität, Beruf, Einkommen (Urteile über freiwillige Gewohnheiten sind erlaubt)",
     "Sex, Drogen, Gewalt, Tod, Tragödien",
     "Kinder und Erziehung",
     "Tierwohl und Tierquälerei",
